@@ -16,6 +16,7 @@
 #include "../src/mpmc_queue.h"
 #include "../src/ms_queue.h"
 #include "../src/hashmap.h"
+#include "../src/spsc_queue.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -286,6 +287,82 @@ static void test_hashmap_mt(void)
     hashmap_destroy(map);
 }
 
+/* ── SPSC Queue Tests ── */
+
+static void test_spsc_fifo(void)
+{
+    spsc_queue_t *q = spsc_queue_create(16);
+    int a = 1, b = 2, c = 3;
+    void *out;
+
+    spsc_enqueue(q, &a);
+    spsc_enqueue(q, &b);
+    spsc_enqueue(q, &c);
+
+    assert(spsc_dequeue(q, &out) && out == &a);
+    assert(spsc_dequeue(q, &out) && out == &b);
+    assert(spsc_dequeue(q, &out) && out == &c);
+    assert(!spsc_dequeue(q, &out));
+
+    spsc_queue_destroy(q);
+}
+
+static void test_spsc_full_empty(void)
+{
+    spsc_queue_t *q = spsc_queue_create(8);
+    int x = 42;
+    void *out;
+
+    for (int i = 0; i < 8; i++) assert(spsc_enqueue(q, &x));
+    assert(!spsc_enqueue(q, &x));
+    for (int i = 0; i < 8; i++) assert(spsc_dequeue(q, &out));
+    assert(!spsc_dequeue(q, &out));
+
+    spsc_queue_destroy(q);
+}
+
+struct spsc_mt_args { spsc_queue_t *q; size_t count; };
+
+static void *spsc_prod(void *arg) {
+    struct spsc_mt_args *a = arg;
+    for (size_t i = 0; i < 500000; i++)
+        while (!spsc_enqueue(a->q, (void *)(uintptr_t)(i+1))) {}
+    a->count = 500000;
+    return NULL;
+}
+
+static void *spsc_cons(void *arg) {
+    struct spsc_mt_args *a = arg;
+    void *data;
+    size_t n = 0;
+    while (n < 500000) {
+        if (spsc_dequeue(a->q, &data)) {
+            assert(data != NULL);
+            n++;
+        }
+    }
+    a->count = n;
+    return NULL;
+}
+
+static void test_spsc_mt(void)
+{
+    spsc_queue_t *q = spsc_queue_create(1 << 14);
+    pthread_t pt, ct;
+    struct spsc_mt_args pa = { .q = q }, ca = { .q = q };
+
+    pthread_create(&pt, NULL, spsc_prod, &pa);
+    pthread_create(&ct, NULL, spsc_cons, &ca);
+
+    pthread_join(pt, NULL);
+    pthread_join(ct, NULL);
+
+    assert(pa.count == ca.count);
+    assert(spsc_queue_size(q) == 0);
+
+    spsc_queue_destroy(q);
+}
+
 /* ── Benchmarks ── */
 
 static void bench_mpmc_throughput(void)
@@ -305,6 +382,18 @@ static void bench_mpmc_throughput(void)
     printf("\n  Benchmarks:\n");
     printf("    MPMC enq+deq pair:  %.1f ns\n", elapsed_ms(&s, &e) * 1e6 / ops);
     mpmc_queue_destroy(q);
+
+    /* SPSC benchmark */
+    spsc_queue_t *sq = spsc_queue_create(1 << 16);
+    void *sdata;
+    clock_gettime(CLOCK_MONOTONIC, &s);
+    for (size_t i = 0; i < ops; i++) {
+        spsc_enqueue(sq, (void*)(uintptr_t)(i+1));
+        spsc_dequeue(sq, &sdata);
+    }
+    clock_gettime(CLOCK_MONOTONIC, &e);
+    printf("    SPSC enq+deq pair:  %.1f ns\n", elapsed_ms(&s, &e) * 1e6 / ops);
+    spsc_queue_destroy(sq);
 }
 
 int main(void)
@@ -323,6 +412,11 @@ int main(void)
     printf("\nUnbounded M&S Queue:\n");
     TEST(test_ms_fifo);
     TEST(test_ms_mt);
+
+    printf("\nSPSC Queue (io_uring-style):\n");
+    TEST(test_spsc_fifo);
+    TEST(test_spsc_full_empty);
+    TEST(test_spsc_mt);
 
     printf("\nLock-Free Hash Map:\n");
     TEST(test_hashmap_basic);

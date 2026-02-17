@@ -3,7 +3,7 @@ CFLAGS  = -Wall -Wextra -std=c11 -O2 -g
 LDFLAGS = -lpthread
 BUILD   = build
 
-SRCS    = src/epoch.c src/mpmc_queue.c src/ms_queue.c src/hashmap.c
+SRCS    = src/epoch.c src/mpmc_queue.c src/ms_queue.c src/spsc_queue.c src/hashmap.c
 
 all: $(BUILD)/test
 
