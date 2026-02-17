@@ -11,6 +11,7 @@ epoch-based memory reclamation system.
 |-----------|-----------|------------|
 | **Bounded MPMC Queue** | Vyukov ring buffer | Fixed-capacity, 1 CAS/op, ~7 ns/pair |
 | **Unbounded MPMC Queue** | Michael & Scott (1996) | Linked-list, sentinel, EBR-safe |
+| **SPSC Queue** | Ring buffer (io_uring-style) | Wait-free, no CAS, ~2 ns/pair |
 | **Lock-Free Hash Map** | Split-ordered lists (Shalev & Shavit) | Amortized resize, Harris deletion |
 | **Epoch-Based Reclamation** | Fraser (2004) | 3-epoch, per-thread retire lists |
 
@@ -52,6 +53,7 @@ hashmap_thread_unregister(map, slot);
 | Benchmark | Result |
 |-----------|--------|
 | MPMC enq+deq pair (1 thread) | 7 ns |
+| SPSC enq+deq pair (1 thread) | 2 ns |
 | MPMC 8P+8C, 1.6M ops | 98 ns/op |
 | M&S queue 4P+4C, 400K ops | 148 ns/op |
 | Hash map 4T, 60K ops (put+get+remove) | ~22 µs/op |
